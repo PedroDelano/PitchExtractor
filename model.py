@@ -4,6 +4,7 @@ Kum et al. - "Joint Detection and Classification of Singing Voice Melody Using
 Convolutional Recurrent Neural Networks" (2019)
 Link: https://www.semanticscholar.org/paper/Joint-Detection-and-Classification-of-Singing-Voice-Kum-Nam/60a2ad4c7db43bace75805054603747fcd062c0d
 """
+
 import torch
 from torch import nn
 
@@ -12,21 +13,28 @@ class JDCNet(nn.Module):
     """
     Joint Detection and Classification Network model for singing voice melody.
     """
+
     def __init__(self, num_class=722, leaky_relu_slope=0.01):
         super().__init__()
         self.num_class = num_class
 
         # input = (b, 1, 31, 513), b = batch size
         self.conv_block = nn.Sequential(
-            nn.Conv2d(in_channels=1, out_channels=64, kernel_size=3, padding=1, bias=False),  # out: (b, 64, 31, 513)
+            nn.Conv2d(
+                in_channels=1, out_channels=64, kernel_size=3, padding=1, bias=False
+            ),  # out: (b, 64, 31, 513)
             nn.BatchNorm2d(num_features=64),
             nn.LeakyReLU(leaky_relu_slope, inplace=True),
             nn.Conv2d(64, 64, 3, padding=1, bias=False),  # (b, 64, 31, 513)
         )
 
         # res blocks
-        self.res_block1 = ResBlock(in_channels=64, out_channels=128)  # (b, 128, 31, 128)
-        self.res_block2 = ResBlock(in_channels=128, out_channels=192)  # (b, 192, 31, 32)
+        self.res_block1 = ResBlock(
+            in_channels=64, out_channels=128
+        )  # (b, 128, 31, 128)
+        self.res_block2 = ResBlock(
+            in_channels=128, out_channels=192
+        )  # (b, 192, 31, 32)
         self.res_block3 = ResBlock(in_channels=192, out_channels=256)  # (b, 256, 31, 8)
 
         # pool block
@@ -55,19 +63,31 @@ class JDCNet(nn.Module):
 
         # input: (b, 31, 512) - resized from (b, 256, 31, 2)
         self.bilstm_classifier = nn.LSTM(
-            input_size=512, hidden_size=256,
-            batch_first=True, dropout=0.3, bidirectional=True)  # (b, 31, 512)
+            input_size=512,
+            hidden_size=256,
+            batch_first=True,
+            dropout=0.3,
+            bidirectional=True,
+        )  # (b, 31, 512)
 
         # input: (b, 31, 512) - resized from (b, 256, 31, 2)
         self.bilstm_detector = nn.LSTM(
-            input_size=512, hidden_size=256,
-            batch_first=True, dropout=0.3, bidirectional=True)  # (b, 31, 512)
+            input_size=512,
+            hidden_size=256,
+            batch_first=True,
+            dropout=0.3,
+            bidirectional=True,
+        )  # (b, 31, 512)
 
         # input: (b * 31, 512)
-        self.classifier = nn.Linear(in_features=512, out_features=self.num_class)  # (b * 31, num_class)
+        self.classifier = nn.Linear(
+            in_features=512, out_features=self.num_class
+        )  # (b * 31, num_class)
 
         # input: (b * 31, 512)
-        self.detector = nn.Linear(in_features=512, out_features=2)  # (b * 31, 2) - binary classifier
+        self.detector = nn.Linear(
+            in_features=512, out_features=2
+        )  # (b * 31, 2) - binary classifier
 
         # initialize weights
         self.apply(self.init_weights)
@@ -83,19 +103,25 @@ class JDCNet(nn.Module):
         # forward pass for classifier #
         ###############################
         convblock_out = self.conv_block(x)
-        
+
         resblock1_out = self.res_block1(convblock_out)
         resblock2_out = self.res_block2(resblock1_out)
         resblock3_out = self.res_block3(resblock2_out)
         poolblock_out = self.pool_block(resblock3_out)
-        
+
         # (b, 256, 31, 2) => (b, 31, 256, 2) => (b, 31, 512)
-        classifier_out = poolblock_out.permute(0, 2, 1, 3).contiguous().view((-1, seq_len, 512))
-        classifier_out, _ = self.bilstm_classifier(classifier_out)  # ignore the hidden states
+        classifier_out = (
+            poolblock_out.permute(0, 2, 1, 3).contiguous().view((-1, seq_len, 512))
+        )
+        classifier_out, _ = self.bilstm_classifier(
+            classifier_out
+        )  # ignore the hidden states
 
         classifier_out = classifier_out.contiguous().view((-1, 512))  # (b * 31, 512)
         classifier_out = self.classifier(classifier_out)
-        classifier_out = classifier_out.view((-1, seq_len, self.num_class))  # (b, 31, num_class)
+        classifier_out = classifier_out.view(
+            (-1, seq_len, self.num_class)
+        )  # (b, 31, num_class)
 
         #############################
         # forward pass for detector #
@@ -109,13 +135,17 @@ class JDCNet(nn.Module):
         detector_out = self.detector_conv(concat_out)
 
         # (b, 256, 31, 2) => (b, 31, 256, 2) => (b, 31, 512)
-        detector_out = detector_out.permute(0, 2, 1, 3).contiguous().view((-1, seq_len, 512))
+        detector_out = (
+            detector_out.permute(0, 2, 1, 3).contiguous().view((-1, seq_len, 512))
+        )
         detector_out, _ = self.bilstm_detector(detector_out)  # (b, 31, 512)
 
         detector_out = detector_out.contiguous().view((-1, 512))
         detector_out = self.detector(detector_out)
-        detector_out = detector_out.view((-1, seq_len, 2)).sum(axis=-1)  # binary classifier - (b, 31, 2)
-        
+        detector_out = detector_out.view((-1, seq_len, 2)).sum(
+            axis=-1
+        )  # binary classifier - (b, 31, 2)
+
         # sizes: (b, 31, 722), (b, 31, 2)
         # classifier output consists of predicted pitch classes per frame
         # detector output consists of: (isvoice, notvoice) estimates per frame
@@ -154,8 +184,13 @@ class ResBlock(nn.Module):
 
         # conv layers
         self.conv = nn.Sequential(
-            nn.Conv2d(in_channels=in_channels, out_channels=out_channels,
-                      kernel_size=3, padding=1, bias=False),
+            nn.Conv2d(
+                in_channels=in_channels,
+                out_channels=out_channels,
+                kernel_size=3,
+                padding=1,
+                bias=False,
+            ),
             nn.BatchNorm2d(out_channels),
             nn.LeakyReLU(leaky_relu_slope, inplace=True),
             nn.Conv2d(out_channels, out_channels, 3, padding=1, bias=False),

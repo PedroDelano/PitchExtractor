@@ -18,6 +18,8 @@ pyworld = "^0.3.4"
 tqdm = "^4.66.2"
 tensorboard = "^2.16.2"
 nvitop = "^1.3.2"
+black = "^24.4.0"
+isort = "^5.13.2"
 
 
 [build-system]

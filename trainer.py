@@ -1,37 +1,39 @@
 # -*- coding: utf-8 -*-
 
+import logging
 import os
 import os.path as osp
 import sys
 import time
 from collections import defaultdict
 
+import matplotlib.pyplot as plt
 import numpy as np
 import torch
-from torch import nn
 from PIL import Image
+from torch import nn
 from tqdm import tqdm
 
-import matplotlib.pyplot as plt
-
-import logging
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
+
 class Trainer(object):
-    def __init__(self,
-                 model=None,
-                 criterion=None,
-                 optimizer=None,
-                 scheduler=None,
-                 config={},
-                 loss_config={},
-                 device=torch.device("cpu"),
-                 logger=logger,
-                 train_dataloader=None,
-                 val_dataloader=None,
-                 initial_steps=0,
-                 initial_epochs=0):
+    def __init__(
+        self,
+        model=None,
+        criterion=None,
+        optimizer=None,
+        scheduler=None,
+        config={},
+        loss_config={},
+        device=torch.device("cpu"),
+        logger=logger,
+        train_dataloader=None,
+        val_dataloader=None,
+        initial_steps=0,
+        initial_epochs=0,
+    ):
 
         self.steps = initial_steps
         self.epochs = initial_epochs
@@ -98,7 +100,9 @@ class Trainer(object):
                     if not force_load:
                         continue
 
-                    min_shape = np.minimum(np.array(val.shape), np.array(model_states[key].shape))
+                    min_shape = np.minimum(
+                        np.array(val.shape), np.array(model_states[key].shape)
+                    )
                     slices = [slice(0, min_index) for min_index in min_shape]
                     model_states[key][slices].copy_(val[slices])
                 else:
@@ -119,46 +123,53 @@ class Trainer(object):
 
     @staticmethod
     def length_to_mask(lengths):
-        mask = torch.arange(lengths.max()).unsqueeze(0).expand(lengths.shape[0], -1).type_as(lengths)
-        mask = torch.gt(mask+1, lengths.unsqueeze(1))
+        mask = (
+            torch.arange(lengths.max())
+            .unsqueeze(0)
+            .expand(lengths.shape[0], -1)
+            .type_as(lengths)
+        )
+        mask = torch.gt(mask + 1, lengths.unsqueeze(1))
         return mask
 
     def _get_lr(self):
         for param_group in self.optimizer.param_groups:
-            lr = param_group['lr']
+            lr = param_group["lr"]
             break
         return lr
 
     def run(self, batch):
         self.optimizer.zero_grad()
         batch = [b.to(self.device) for b in batch]
-        
+
         x, f0, sil = batch
         f0_pred, sil_pred = self.model(x.transpose(-1, -2))
-        
-        loss_f0 = self.loss_config['lambda_f0'] * self.criterion['l1'](f0_pred.squeeze(), f0)
-        loss_sil = self.criterion['ce'](sil_pred, sil)
+
+        loss_f0 = self.loss_config["lambda_f0"] * self.criterion["l1"](
+            f0_pred.squeeze(), f0
+        )
+        loss_sil = self.criterion["ce"](sil_pred, sil)
         loss = loss_f0 + loss_sil
-        
+
         loss.backward()
         self.optimizer.step()
         self.scheduler.step()
-        
-        return {'loss': loss.item(),
-                'f0': loss_f0.item(),
-                'sil': loss_sil.item()}
+
+        return {"loss": loss.item(), "f0": loss_f0.item(), "sil": loss_sil.item()}
 
     def _train_epoch(self):
         self.epochs += 1
         train_losses = defaultdict(list)
         self.model.train()
-        for train_steps_per_epoch, batch in enumerate(tqdm(self.train_dataloader, desc="[train]"), 1):
+        for train_steps_per_epoch, batch in enumerate(
+            tqdm(self.train_dataloader, desc="[train]"), 1
+        ):
             losses = self.run(batch)
             for key, value in losses.items():
                 train_losses["train/%s" % key].append(value)
 
         train_losses = {key: np.mean(value) for key, value in train_losses.items()}
-        train_losses['train/learning_rate'] = self._get_lr()
+        train_losses["train/learning_rate"] = self._get_lr()
         return train_losses
 
     @torch.no_grad()
@@ -166,21 +177,24 @@ class Trainer(object):
         self.model.eval()
         eval_losses = defaultdict(list)
         eval_images = defaultdict(list)
-        for eval_steps_per_epoch, batch in enumerate(tqdm(self.val_dataloader, desc="[eval]"), 1):
+        for eval_steps_per_epoch, batch in enumerate(
+            tqdm(self.val_dataloader, desc="[eval]"), 1
+        ):
             batch = [b.to(self.device) for b in batch]
             x, f0, sil = batch
-            
+
             f0_pred, sil_pred = self.model(x.transpose(-1, -2))
 
-            loss_f0 = self.loss_config['lambda_f0'] * self.criterion['l1'](f0_pred.squeeze(), f0)
-            loss_sil = self.criterion['ce'](sil_pred, sil)
+            loss_f0 = self.loss_config["lambda_f0"] * self.criterion["l1"](
+                f0_pred.squeeze(), f0
+            )
+            loss_sil = self.criterion["ce"](sil_pred, sil)
             loss = loss_f0 + loss_sil
-            
-            
+
             eval_losses["eval/loss"].append(loss.item())
             eval_losses["eval/f0"].append(loss_f0.item())
             eval_losses["eval/sil"].append(loss_sil.item())
-            
+
         eval_losses = {key: np.mean(value) for key, value in eval_losses.items()}
         eval_losses.update(eval_images)
         return eval_losses
