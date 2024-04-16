@@ -1,0 +1,25 @@
+[tool.poetry]
+name = "pitchextractor"
+version = "0.1.0"
+description = ""
+authors = ["Pedro Cavalcanti <pedro.delano@boanota.credit>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.11"
+soundfile = "^0.12.1"
+torchaudio = "^2.2.2"
+torch = "^2.2.2"
+pyyaml = "^6.0.1"
+click = "^8.1.7"
+matplotlib = "^3.8.4"
+librosa = "^0.10.1"
+pyworld = "^0.3.4"
+tqdm = "^4.66.2"
+tensorboard = "^2.16.2"
+nvitop = "^1.3.2"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
